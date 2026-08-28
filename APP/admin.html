@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Market - Magazzino & Portale Clienti</title>
+    <!-- Tailwind CSS (via CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Dexie.js per gestione Database IndexedDB nel Browser -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <style>
+        .active-tab {
+            border-bottom: 3px solid #0284c7;
+            color: #0284c7;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 min-h-screen">
+
+    <!-- Top Bar per Selezione Ruolo & Cliente Attivo -->
+    <div class="bg-slate-950 text-slate-300 text-xs py-2.5 px-4 flex flex-wrap justify-between items-center gap-2 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="font-semibold text-slate-200">Sistema Locale Magazzino & Caselle</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <label for="ruolo-select" class="font-medium text-slate-400">Seleziona Modalità:</label>
+            <select id="ruolo-select" onchange="cambiaRuolo(this.value)" class="bg-slate-800 text-white rounded px-2.5 py-1 text-xs outline-none border border-slate-700 cursor-pointer">
+                <option value="admin">👑 Amministratore (Gestione Completa & Magazzino)</option>
+                <option value="cliente">👤 Cliente (Vista Vetrina & Mia Casella)</option>
+            </select>
+            <select id="cliente-attivo-select" onchange="impostaClienteAttivo(this.value)" class="hidden bg-emerald-950 text-emerald-200 rounded px-2.5 py-1 text-xs outline-none border border-emerald-700 font-medium">
+                <!-- Popolato con i clienti salvati -->
+            </select>
+        </div>
+    </div>
+
+    <!-- Header di Navigazione -->
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-sky-500 text-white p-2.5 rounded-xl font-bold text-2xl shadow-lg">🛒</div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide">Community Market</h1>
+                    <p id="sub-header" class="text-xs text-sky-400 font-medium">Pannello Amministratore & Magazzino</p>
+                </div>
+            </div>
+            <nav id="nav-menu" class="flex flex-wrap gap-2 sm:gap-4 text-sm font-medium">
+                <button onclick="switchTab('vetrina')" id="tab-vetrina" class="py-2 px-3 active-tab transition">🛍️ Vetrina</button>
+                <button onclick="switchTab('magazzino')" id="tab-magazzino" class="py-2 px-3 text-slate-400 hover:text-white admin-only transition">🏭 Magazzino</button>
+                <button onclick="switchTab('clienti')" id="tab-clienti" class="py-2 px-3 text-slate-400 hover:text-white admin-only transition">👤 Clienti</button>
+                <button onclick="switchTab('caselle')" id="tab-caselle" class="py-2 px-3 text-slate-400 hover:text-white transition">📦 Gestione Caselle</button>
+                <button onclick="switchTab('spedizioni')" id="tab-spedizioni" class="py-2 px-3 text-slate-400 hover:text-white transition">🚚 Spedizioni</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+
+        <!-- SEZIONE 1: VETRINA PRODOTTI -->
+        <section id="sec-vetrina" class="space-y-6">
+            <div class="flex flex-wrap justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-3">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-800">Catalogo Articoli</h2>
+                    <p class="text-xs text-slate-500">Sfoglia i prodotti in giacenza e assegnali alle caselle cliente</p>
+                </div>
+                <button onclick="apriModalNuovoProdotto()" class="admin-only bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow">
+                    <span>+</span> Nuovo Prodotto
+                </button>
+            </div>
+
+            <!-- Griglia Prodotti -->
+            <div id="grid-prodotti" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <!-- Caricamento dinamico tramite JS -->
+            </div>
+        </section>
+
+        <!-- SEZIONE 2: MAGAZZINO (SOLO ADMIN) -->
+        <section id="sec-magazzino" class="hidden space-y-6 admin-only">
+            <div class="flex flex-wrap justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-3">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-800">Gestione Avanzata Magazzino</h2>
+                    <p class="text-xs text-slate-500">Monitoraggio giacenze, scorte critiche e allocazione valore</p>
+                </div>
+                <button onclick="esportaDatabaseJSON()" class="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow transition">
+                    📥 Esporta Backup (JSON)
+                </button>
+            </div>
+
+            <!-- Stats KPI Magazzino -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Totale Articoli in Stock</span>
+                    <p id="stat-stock-tot" class="text-3xl font-black text-slate-800 mt-1">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-bold text-amber-500 uppercase tracking-wider">Scorta Critica (&lt;=2 pz)</span>
+                    <p id="stat-stock-critico" class="text-3xl font-black text-amber-600 mt-1">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <span class="text-xs font-bold text-indigo-500 uppercase tracking-wider">Valore Totale Inventario</span>
+                    <p id="stat-valore-magazzino" class="text-3xl font-black text-indigo-600 mt-1">0.00 €</p>
+                </div>
+            </div>
+
+            <!-- Tabella Giacenze -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                <table class="w-full text-left text-sm min-w-[650px]">
+                    <thead class="bg-slate-50 text-slate-600 uppercase text-xs border-b border-slate-200">
+                        <tr>
+                            <th class="p-4">Prodotto & Descrizione</th>
+                            <th class="p-4">Prezzo Unitario</th>
+                            <th class="p-4">Giacenza</th>
+                            <th class="p-4">Stato Stock</th>
+                            <th class="p-4 text-right">Azioni & Giacenza</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-magazzino">
+                        <!-- Caricamento dinamico -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- SEZIONE 3: CLIENTI (SOLO ADMIN) -->
+        <section id="sec-clienti" class="hidden space-y-6 admin-only">
+            <div class="flex flex-wrap justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-3">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-800">Anagrafica Clienti Community</h2>
+                    <p class="text-xs text-slate-500">Gestisci i recapiti e l'indirizzo di spedizione dei tuoi acquirenti</p>
+                </div>
+                <button onclick="openModal('modal-cliente')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow">
+                    <span>+</span> Nuovo Cliente
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                <table class="w-full text-left text-sm min-w-[600px]">
+                    <thead class="bg-slate-50 text-slate-600 uppercase text-xs border-b border-slate-200">
+                        <tr>
+                            <th class="p-4">ID</th>
+                            <th class="p-4">Nome e Cognome</th>
+                            <th class="p-4">Telefono (WhatsApp)</th>
+                            <th class="p-4">Indirizzo Spedizione</th>
+                            <th class="p-4 text-right">Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-clienti">
+                        <!-- Caricamento dinamico -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- SEZIONE 4: CASELLE -->
+        <section id="sec-caselle" class="hidden space-y-6">
+            <div class="flex flex-wrap justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-3">
+                <div>
+                    <h2 id="title-caselle" class="text-lg font-bold text-slate-800">Gestione Caselle / Box Accumulo</h2>
+                    <p id="sub-caselle" class="text-xs text-slate-500">Visualizza i prodotti accumulati e organizza il saldo o la spedizione</p>
+                </div>
+                <button onclick="openModal('modal-casella')" class="admin-only bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow">
+                    <span>+</span> Apri Nuova Casella
+                </button>
+            </div>
+
+            <div id="grid-caselle" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Caricamento dinamico -->
+            </div>
+        </section>
+
+        <!-- SEZIONE 5: SPEDIZIONI -->
+        <section id="sec-spedizioni" class="hidden space-y-6">
+            <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-800">Registro Spedizioni</h2>
+                    <p class="text-xs text-slate-500">Tracciamento e storico caselle inviate</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                <table class="w-full text-left text-sm min-w-[600px]">
+                    <thead class="bg-slate-50 text-slate-600 uppercase text-xs border-b border-slate-200">
+                        <tr>
+                            <th class="p-4">N° Casella</th>
+                            <th class="p-4">Cliente</th>
+                            <th class="p-4">Corriere</th>
+                            <th class="p-4">Tracking Number</th>
+                            <th class="p-4">Stato Spedizione</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-spedizioni">
+                        <!-- Caricamento dinamico -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODALE: PRODOTTO (CREAZIONE ED EDITING) -->
+    <div id="modal-prodotto" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-100">
+            <h3 id="modal-prodotto-title" class="text-lg font-bold text-slate-800 mb-4">Aggiungi Prodotto al Magazzino</h3>
+            <form onsubmit="salvaProdotto(event)" class="space-y-4">
+                <input type="hidden" id="p-id">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Nome Articolo</label>
+                    <input type="text" id="p-nome" placeholder="es. Maglietta Over Size L" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Descrizione Articolo</label>
+                    <textarea id="p-descrizione" rows="3" placeholder="Inserisci dettagli del prodotto (taglia, colore, materiale, condizioni...)" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Prezzo (€)</label>
+                        <input type="number" step="0.01" id="p-prezzo" placeholder="19.99" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Giacenza</label>
+                        <input type="number" id="p-giacenza" placeholder="10" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">URL Immagine (Opzionale)</label>
+                    <input type="url" id="p-foto" placeholder="https://..." class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('modal-prodotto')" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">Annulla</button>
+                    <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 shadow">Salva Prodotto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODALE: NUOVO CLIENTE -->
+    <div id="modal-cliente" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-100">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Registra Nuovo Cliente</h3>
+            <form onsubmit="salvaCliente(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Nome e Cognome</label>
+                    <input type="text" id="c-nome" placeholder="es. Mario Rossi" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Telefono WhatsApp (con prefisso 39)</label>
+                    <input type="text" id="c-telefono" placeholder="393331234567" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Indirizzo Completo di Spedizione</label>
+                    <textarea id="c-indirizzo" rows="2" placeholder="Via Roma 15, 00100 Roma (RM)" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"></textarea>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('modal-cliente')" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">Annulla</button>
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 shadow">Salva Cliente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODALE: NUOVA CASELLA -->
+    <div id="modal-casella" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-100">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Apri Nuova Casella Accumulo</h3>
+            <form onsubmit="salvaCasella(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Codice / Numero Casella</label>
+                    <input type="text" id="box-num" placeholder="es. BOX-101" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Cliente Intestatario</label>
+                    <select id="box-cliente" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <!-- Popolato dinamicamente -->
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('modal-casella')" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">Annulla</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 shadow">Crea Casella</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- LOGICA JAVASCRIPT APP -->
+    <script>
+        let ruoloCorrente = 'admin'; // 'admin' oppure 'cliente'
+        let clienteAttivoId = null;  // ID del cliente attualmente selezionato in vista cliente
+
+        // Inizializzazione Database IndexedDB con Dexie.js (con estensione descrizione)
+        const db = new Dexie("AppCommunityMarketV3");
+        db.version(1).stores({
+            prodotti: "++id, nome, descrizione, prezzo, giacenza, foto",
+            clienti: "++id, nome, telefono, indirizzo",
+            caselle: "++id, numero, clienteId, stato",
+            dettagli: "++id, casellaId, prodottoId, quantita",
+            spedizioni: "++id, casellaId, corriere, tracking, stato"
+        });
+
+        // Cambio Ruolo & Gestione Interfaccia
+        async function cambiaRuolo(nuovoRuolo) {
+            ruoloCorrente = nuovoRuolo;
+            const clienteSelect = document.getElementById('cliente-attivo-select');
+            const adminElements = document.querySelectorAll('.admin-only');
+
+            if (ruoloCorrente === 'cliente') {
+                clienteSelect.classList.remove('hidden');
+                adminElements.forEach(el => el.classList.add('hidden'));
+                document.getElementById('sub-header').innerText = "Vetrina & Portale Personalizzato Cliente";
+                await popolaSelectClienteAttivo();
+            } else {
+                clienteSelect.classList.add('hidden');
+                adminElements.forEach(el => el.classList.remove('hidden'));
+                document.getElementById('sub-header').innerText = "Pannello Amministratore & Magazzino";
+                switchTab('vetrina');
+            }
+            caricaProdotti();
+            caricaCaselle();
+        }
+
+        async function popolaSelectClienteAttivo() {
+            const clienti = await db.clienti.toArray();
+            const sel = document.getElementById('cliente-attivo-select');
+            if(clienti.length === 0) {
+                sel.innerHTML = `<option value="">Nessun cliente registrato</option>`;
+                clienteAttivoId = null;
+                return;
+            }
+            sel.innerHTML = clienti.map(c => `<option value="${c.id}">Vista Cliente: ${c.nome}</option>`).join('');
+            clienteAttivoId = parseInt(sel.value);
+        }
+
+        function impostaClienteAttivo(id) {
+            clienteAttivoId = parseInt(id);
+            caricaProdotti();
+            caricaCaselle();
+        }
+
+        // Navigazione Schede (Tabs)
+        function switchTab(tab) {
+            ['vetrina', 'magazzino', 'clienti', 'caselle', 'spedizioni'].forEach(t => {
+                const sec = document.getElementById(`sec-${t}`);
+                const tabBtn = document.getElementById(`tab-${t}`);
+                if (sec) sec.classList.add('hidden');
+                if (tabBtn) {
+                    tabBtn.classList.remove('active-tab');
+                    tabBtn.classList.add('text-slate-400');
+                }
+            });
+
+            document.getElementById(`sec-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('active-tab');
+
+            if (tab === 'vetrina') caricaProdotti();
+            if (tab === 'magazzino') caricaMagazzino();
+            if (tab === 'clienti') caricaClienti();
+            if (tab === 'caselle') caricaCaselle();
+            if (tab === 'spedizioni') caricaSpedizioni();
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+            if(id === 'modal-casella') popolaSelectClienti();
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function apriModalNuovoProdotto() {
+            document.getElementById('p-id').value = '';
+            document.getElementById('p-nome').value = '';
+            document.getElementById('p-descrizione').value = '';
+            document.getElementById('p-prezzo').value = '';
+            document.getElementById('p-giacenza').value = '';
+            document.getElementById('p-foto').value = '';
+            document.getElementById('modal-prodotto-title').innerText = "Aggiungi Prodotto al Magazzino";
+            openModal('modal-prodotto');
+        }
+
+        async function apriModalModificaProdotto(id) {
+            const p = await db.prodotti.get(id);
+            if(!p) return;
+            document.getElementById('p-id').value = p.id;
+            document.getElementById('p-nome').value = p.nome;
+            document.getElementById('p-descrizione').value = p.descrizione || '';
+            document.getElementById('p-prezzo').value = p.prezzo;
+            document.getElementById('p-giacenza').value = p.giacenza;
+            document.getElementById('p-foto').value = p.foto || '';
+            document.getElementById('modal-prodotto-title').innerText = "Modifica Prodotto & Descrizione";
+            openModal('modal-prodotto');
+        }
+
+        // Gestione Magazzino & Vetrina Prodotti
+        async function salvaProdotto(e) {
+            e.preventDefault();
+            const idVal = document.getElementById('p-id').value;
+            const prodottoData = {
+                nome: document.getElementById('p-nome').value,
+                descrizione: document.getElementById('p-descrizione').value,
+                prezzo: parseFloat(document.getElementById('p-prezzo').value),
+                giacenza: parseInt(document.getElementById('p-giacenza').value),
+                foto: document.getElementById('p-foto').value || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400'
+            };
+
+            if(idVal) {
+                await db.prodotti.update(parseInt(idVal), prodottoData);
+            } else {
+                await db.prodotti.add(prodottoData);
+            }
+
+            closeModal('modal-prodotto');
+            e.target.reset();
+            caricaProdotti();
+            caricaMagazzino();
+        }
+
+        async function caricaProdotti() {
+            const prodotti = await db.prodotti.toArray();
+            const grid = document.getElementById('grid-prodotti');
+            let caselleAperte = [];
+
+            if (ruoloCorrente === 'admin') {
+                caselleAperte = await db.caselle.where('stato').equals('Aperta').toArray();
+            } else if (clienteAttivoId) {
+                caselleAperte = await db.caselle.where({ clienteId: clienteAttivoId, stato: 'Aperta' }).toArray();
+            }
+
+            if(prodotti.length === 0) {
+                grid.innerHTML = `<p class="col-span-full text-center text-slate-400 py-10">Nessun prodotto presente a catalogo.</p>`;
+                return;
+            }
+
+            grid.innerHTML = prodotti.map(p => {
+                let actionArea = '';
+                if (ruoloCorrente === 'admin') {
+                    actionArea = `
+                        <select id="sel-box-${p.id}" class="w-full text-xs border border-slate-300 rounded p-2 mb-2 bg-white outline-none">
+                            <option value="">-- Seleziona Casella --</option>
+                            ${caselleAperte.map(c => `<option value="${c.id}">${c.numero}</option>`).join('')}
+                        </select>
+                        <div class="flex gap-2">
+                            <button onclick="aggiungiACasella(${p.id})" ${p.giacenza <= 0 ? 'disabled' : ''} class="flex-1 bg-slate-900 hover:bg-sky-600 text-white py-2 rounded-lg text-xs font-semibold transition disabled:opacity-50">
+                                + Assegna
+                            </button>
+                            <button onclick="apriModalModificaProdotto(${p.id})" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition">
+                                ✏️ Modifica
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    if (caselleAperte.length > 0) {
+                        const miaCasella = caselleAperte[0];
+                        actionArea = `
+                            <button onclick="clienteAggiungiAuto(${p.id}, ${miaCasella.id})" ${p.giacenza <= 0 ? 'disabled' : ''} class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-xs font-bold transition disabled:opacity-50 shadow">
+                                🛒 Aggiungi alla Casella (${miaCasella.numero})
+                            </button>
+                        `;
+                    } else {
+                        actionArea = `<p class="text-xs text-amber-600 font-medium text-center py-1 bg-amber-50 rounded">Nessuna tua casella risulta aperta</p>`;
+                    }
+                }
+
+                return `
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col justify-between hover:shadow-md transition">
+                        <div>
+                            <img src="${p.foto}" class="w-full h-44 object-cover bg-slate-100" alt="${p.nome}" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400'">
+                            <div class="p-4">
+                                <h3 class="font-bold text-slate-800 text-base mb-1">${p.nome}</h3>
+                                <p class="text-xs text-slate-500 mb-3 min-h-[32px] line-clamp-2">${p.descrizione ? p.descrizione : '<em>Nessuna descrizione specificata</em>'}</p>
+                                <div class="flex justify-between items-center text-sm mb-2">
+                                    <span class="text-sky-600 font-extrabold text-lg">${p.prezzo.toFixed(2)} €</span>
+                                    <span class="text-xs ${p.giacenza > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'} px-2 py-0.5 rounded-full font-semibold">Disponibili: ${p.giacenza}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-slate-50 border-t border-slate-100">
+                            ${actionArea}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function clienteAggiungiAuto(prodottoId, casellaId) {
+            const prodotto = await db.prodotti.get(prodottoId);
+            if(prodotto.giacenza <= 0) return alert('Spiacenti, articolo esaurito!');
+
+            await db.dettagli.add({ casellaId, prodottoId, quantita: 1 });
+            await db.prodotti.update(prodottoId, { giacenza: prodotto.giacenza - 1 });
+
+            alert('Articolo prenotato e aggiunto alla tua casella!');
+            caricaProdotti();
+        }
+
+        async function caricaMagazzino() {
+            const prodotti = await db.prodotti.toArray();
+            let totStock = 0;
+            let critici = 0;
+            let valoreTotale = 0;
+
+            const tbody = document.getElementById('tb-magazzino');
+            tbody.innerHTML = prodotti.map(p => {
+                totStock += p.giacenza;
+                valoreTotale += (p.giacenza * p.prezzo);
+                if(p.giacenza <= 2) critici++;
+
+                return `
+                    <tr class="border-b border-slate-100 hover:bg-slate-50">
+                        <td class="p-4">
+                            <div class="font-bold text-slate-800">${p.nome}</div>
+                            <div class="text-xs text-slate-500 max-w-xs truncate">${p.descrizione || 'Nessuna descrizione'}</div>
+                        </td>
+                        <td class="p-4 text-slate-600 font-semibold">${p.prezzo.toFixed(2)} €</td>
+                        <td class="p-4 font-bold ${p.giacenza <= 2 ? 'text-amber-600' : 'text-slate-800'}">${p.giacenza} pz</td>
+                        <td class="p-4">
+                            <span class="text-xs ${p.giacenza > 2 ? 'bg-emerald-100 text-emerald-800' : p.giacenza > 0 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'} px-2.5 py-1 rounded-full font-semibold">
+                                ${p.giacenza > 2 ? 'Disponibile' : p.giacenza > 0 ? 'Scorta Bassa' : 'Esaurito'}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right space-x-1">
+                            <button onclick="apriModalModificaProdotto(${p.id})" class="bg-amber-100 hover:bg-amber-200 text-amber-800 px-2.5 py-1 rounded font-bold text-xs">✏️ Edita</button>
+                            <button onclick="modificaGiacenza(${p.id}, 1)" class="bg-slate-200 hover:bg-slate-300 text-slate-800 px-2.5 py-1 rounded font-bold text-xs">+1</button>
+                            <button onclick="modificaGiacenza(${p.id}, -1)" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-2.5 py-1 rounded font-bold text-xs">-1</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('stat-stock-tot').innerText = totStock;
+            document.getElementById('stat-stock-critico').innerText = critici;
+            document.getElementById('stat-valore-magazzino').innerText = valoreTotale.toFixed(2) + " €";
+        }
+
+        async function modificaGiacenza(id, delta) {
+            const p = await db.prodotti.get(id);
+            const nuovaGiacenza = Math.max(0, p.giacenza + delta);
+            await db.prodotti.update(id, { giacenza: nuovaGiacenza });
+            caricaMagazzino();
+            caricaProdotti();
+        }
+
+        // Gestione Caselle Accumulo
+        async function caricaCaselle() {
+            let caselle = [];
+            if (ruoloCorrente === 'admin') {
+                caselle = await db.caselle.toArray();
+            } else if (clienteAttivoId) {
+                caselle = await db.caselle.where('clienteId').equals(clienteAttivoId).toArray();
+            }
+
+            const grid = document.getElementById('grid-caselle');
+            if(caselle.length === 0) {
+                grid.innerHTML = `<p class="col-span-full text-center text-slate-400 py-10">Nessuna casella trovata.</p>`;
+                return;
+            }
+
+            const caselleHTML = await Promise.all(caselle.map(async c => {
+                const cliente = await db.clienti.get(c.clienteId);
+                const dettagli = await db.dettagli.where('casellaId').equals(c.id).toArray();
+                
+                let totale = 0;
+                let articoliLista = [];
+                for (let d of dettagli) {
+                    const prod = await db.prodotti.get(d.prodottoId);
+                    if(prod) {
+                        totale += prod.prezzo;
+                        articoliLista.push({ idDet: d.id, prodId: prod.id, nome: prod.nome, prezzo: prod.prezzo });
+                    }
+                }
+
+                const testoWA = encodeURIComponent(`Ciao, sono ${cliente ? cliente.nome : ''}. Vorrei confermare e richiedere la spedizione per la mia casella ${c.numero}. Totale: ${totale.toFixed(2)}€.`);
+                const linkWA = cliente ? `https://wa.me/${cliente.telefono}?text=${testoWA}` : '#';
+
+                return `
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-start mb-3">
+                                <div>
+                                    <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100">${c.numero}</span>
+                                    <h3 class="font-bold text-slate-800 text-lg mt-1">${cliente ? cliente.nome : 'Cliente Sconosciuto'}</h3>
+                                </div>
+                                <span class="text-xs ${c.stato === 'Aperta' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'} px-2.5 py-1 rounded-full font-semibold">${c.stato}</span>
+                            </div>
+                            <div class="border-t border-b border-slate-100 py-3 my-3 text-xs text-slate-600 space-y-2">
+                                <p class="font-semibold text-slate-700">Articoli contenuti (${articoliLista.length}):</p>
+                                <ul class="space-y-1 max-h-36 overflow-y-auto pr-1">
+                                    ${articoliLista.map(a => `
+                                        <li class="flex justify-between items-center bg-slate-50 p-1.5 rounded border border-slate-100">
+                                            <span>${a.nome} (${a.prezzo.toFixed(2)}€)</span>
+                                            ${c.stato === 'Aperta' ? `
+                                                <button onclick="rimuoviDaCasella(${a.idDet}, ${a.prodId})" class="text-rose-600 font-bold hover:bg-rose-50 px-1.5 rounded">✕</button>
+                                            ` : ''}
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                                <p class="text-base font-extrabold text-slate-900 pt-2 border-t border-slate-100">Totale Accumulato: ${totale.toFixed(2)} €</p>
+                            </div>
+                        </div>
+                        <div class="space-y-2 pt-2">
+                            ${ruoloCorrente === 'cliente' && c.stato === 'Aperta' ? `
+                                <a href="${linkWA}" target="_blank" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 shadow">
+                                    <span>💬</span> Richiedi Spedizione via WhatsApp
+                                </a>
+                            ` : ''}
+                            ${ruoloCorrente === 'admin' && c.stato === 'Aperta' ? `
+                                <button onclick="chiudiESpedisci(${c.id})" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-lg text-xs font-semibold shadow transition">
+                                    Chiudi & Genera Spedizione
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }));
+
+            grid.innerHTML = caselleHTML.join('');
+        }
+
+        async function rimuoviDaCasella(dettaglioId, prodottoId) {
+            if(!confirm("Rimuovere l'articolo dalla casella e ripristinarlo in magazzino?")) return;
+            await db.dettagli.delete(dettaglioId);
+            const prod = await db.prodotti.get(prodottoId);
+            if(prod) {
+                await db.prodotti.update(prodottoId, { giacenza: prod.giacenza + 1 });
+            }
+            caricaCaselle();
+            caricaProdotti();
+            caricaMagazzino();
+        }
+
+        async function aggiungiACasella(prodottoId) {
+            const sel = document.getElementById(`sel-box-${prodottoId}`);
+            const casellaId = parseInt(sel.value);
+            if (!casellaId) return alert('Seleziona prima una casella valida!');
+
+            const prodotto = await db.prodotti.get(prodottoId);
+            if(prodotto.giacenza <= 0) return alert('Articolo esaurito!');
+
+            await db.dettagli.add({ casellaId, prodottoId, quantita: 1 });
+            await db.prodotti.update(prodottoId, { giacenza: prodotto.giacenza - 1 });
+
+            alert('Articolo aggiunto correttamente alla casella!');
+            caricaProdotti();
+        }
+
+        async function salvaCasella(e) {
+            e.preventDefault();
+            await db.caselle.add({
+                numero: document.getElementById('box-num').value,
+                clienteId: parseInt(document.getElementById('box-cliente').value),
+                stato: 'Aperta'
+            });
+            closeModal('modal-casella');
+            e.target.reset();
+            caricaCaselle();
+        }
+
+        async function chiudiESpedisci(casellaId) {
+            const corriere = prompt("Inserisci il nome del corriere scelto:", "Poste Italiane / BRT");
+            const tracking = prompt("Inserisci il codice di tracciamento:", "TRK-" + Math.floor(100000 + Math.random() * 900000));
+            
+            if(corriere && tracking) {
+                await db.caselle.update(casellaId, { stato: 'Spedita' });
+                await db.spedizioni.add({ casellaId, corriere, tracking, stato: 'In Spedizione' });
+                alert('Casella aggiornata a Spedita e registrata nello storico!');
+                caricaCaselle();
+            }
+        }
+
+        // Anagrafica Clienti & Spedizioni
+        async function salvaCliente(e) {
+            e.preventDefault();
+            await db.clienti.add({
+                nome: document.getElementById('c-nome').value,
+                telefono: document.getElementById('c-telefono').value,
+                indirizzo: document.getElementById('c-indirizzo').value
+            });
+            closeModal('modal-cliente');
+            e.target.reset();
+            caricaClienti();
+        }
+
+        async function caricaClienti() {
+            const clienti = await db.clienti.toArray();
+            const tb = document.getElementById('tb-clienti');
+            tb.innerHTML = clienti.map(c => `
+                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                    <td class="p-4 font-mono text-xs text-slate-400">#${c.id}</td>
+                    <td class="p-4 font-bold text-slate-800">${c.nome}</td>
+                    <td class="p-4 text-slate-600 font-mono text-xs">${c.telefono}</td>
+                    <td class="p-4 text-slate-600">${c.indirizzo || '-'}</td>
+                    <td class="p-4 text-right">
+                        <button onclick="eliminaCliente(${c.id})" class="text-rose-600 hover:underline text-xs font-semibold">Elimina</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function eliminaCliente(id) {
+            if(confirm('Eliminare questo cliente dal database?')) {
+                await db.clienti.delete(id);
+                caricaClienti();
+            }
+        }
+
+        async function popolaSelectClienti() {
+            const clienti = await db.clienti.toArray();
+            const sel = document.getElementById('box-cliente');
+            sel.innerHTML = clienti.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+        }
+
+        async function caricaSpedizioni() {
+            const spedizioni = await db.spedizioni.toArray();
+            const tb = document.getElementById('tb-spedizioni');
+
+            const righe = await Promise.all(spedizioni.map(async s => {
+                const casella = await db.caselle.get(s.casellaId);
+                const cliente = casella ? await db.clienti.get(casella.clienteId) : null;
+                return `
+                    <tr class="border-b border-slate-100 hover:bg-slate-50">
+                        <td class="p-4 font-bold text-indigo-600">${casella ? casella.numero : '-'}</td>
+                        <td class="p-4 font-medium text-slate-800">${cliente ? cliente.nome : '-'}</td>
+                        <td class="p-4 text-slate-600">${s.corriere}</td>
+                        <td class="p-4 font-mono text-xs text-slate-700 font-semibold">${s.tracking}</td>
+                        <td class="p-4"><span class="bg-sky-100 text-sky-800 text-xs px-2.5 py-1 rounded-full font-semibold">${s.stato}</span></td>
+                    </tr>
+                `;
+            }));
+
+            tb.innerHTML = righe.join('');
+        }
+
+        function esportaDatabaseJSON() {
+            Promise.all([
+                db.prodotti.toArray(),
+                db.clienti.toArray(),
+                db.caselle.toArray(),
+                db.dettagli.toArray(),
+                db.spedizioni.toArray()
+            ]).then(([prodotti, clienti, caselle, dettagli, spedizioni]) => {
+                const data = { prodotti, clienti, caselle, dettagli, spedizioni };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `backup_community_market_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+            });
+        }
+
+        // Caricamento Iniziale
+        caricaProdotti();
+    </script>
+</body>
+</html>

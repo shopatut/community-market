@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Market - Vetrina & Caselle</title>
+    <!-- Tailwind CSS (via CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Dexie.js per gestione Database IndexedDB nel Browser -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <style>
+        .active-tab {
+            border-bottom: 3px solid #0284c7;
+            color: #0284c7;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 min-h-screen">
+
+    <!-- Header di Navigazione -->
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-sky-500 text-white p-2.5 rounded-xl font-bold text-2xl shadow-lg">🛒</div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide">Community Market</h1>
+                    <p id="sub-header" class="text-xs text-sky-400 font-medium">Portale Vetrina & Caselle Clienti</p>
+                </div>
+            </div>
+            <nav id="nav-menu" class="flex flex-wrap gap-2 sm:gap-4 text-sm font-medium">
+                <button onclick="switchTab('vetrina')" id="tab-vetrina" class="py-2 px-3 active-tab transition">🛍️ Vetrina</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+
+        <!-- SEZIONE 1: VETRINA PRODOTTI -->
+        <section id="sec-vetrina" class="space-y-6">
+            <div class="flex flex-wrap justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-3">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-800">Catalogo Articoli</h2>
+                    <p class="text-xs text-slate-500">Sfoglia i prodotti in giacenza e assegnali alle caselle cliente</p>
+                </div>
+                <button onclick="apriModalNuovoProdotto()" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow">
+                    <span>+</span> Nuovo Prodotto
+                </button>
+            </div>
+
+            <!-- Griglia Prodotti -->
+            <div id="grid-prodotti" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <!-- Caricamento dinamico tramite JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODALE: PRODOTTO (CREAZIONE ED EDITING) -->
+    <div id="modal-prodotto" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-100">
+            <h3 id="modal-prodotto-title" class="text-lg font-bold text-slate-800 mb-4">Aggiungi Prodotto al Magazzino</h3>
+            <form onsubmit="salvaProdotto(event)" class="space-y-4">
+                <input type="hidden" id="p-id">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Nome Articolo</label>
+                    <input type="text" id="p-nome" placeholder="es. Maglietta Over Size L" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Descrizione Articolo</label>
+                    <textarea id="p-descrizione" rows="3" placeholder="Inserisci dettagli del prodotto (taglia, colore, materiale, condizioni...)" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Prezzo (€)</label>
+                        <input type="number" step="0.01" id="p-prezzo" placeholder="19.99" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Giacenza</label>
+                        <input type="number" id="p-giacenza" placeholder="10" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">URL Immagine (Opzionale)</label>
+                    <input type="url" id="p-foto" placeholder="https://..." class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-sky-500 outline-none">
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('modal-prodotto')" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">Annulla</button>
+                    <button type="submit" class="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-semibold hover:bg-sky-700 shadow">Salva Prodotto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- LOGICA JAVASCRIPT APP -->
+    <script>
+        // Inizializzazione Database IndexedDB con Dexie.js
+        const db = new Dexie("AppCommunityMarketV3");
+        db.version(1).stores({
+            prodotti: "++id, nome, descrizione, prezzo, giacenza, foto",
+            clienti: "++id, nome, telefono, indirizzo",
+            caselle: "++id, numero, clienteId, stato",
+            dettagli: "++id, casellaId, prodottoId, quantita",
+            spedizioni: "++id, casellaId, corriere, tracking, stato"
+        });
+
+        // Navigazione Schede (Tabs)
+        function switchTab(tab) {
+            ['vetrina'].forEach(t => {
+                const sec = document.getElementById(`sec-${t}`);
+                const tabBtn = document.getElementById(`tab-${t}`);
+                if (sec) sec.classList.add('hidden');
+                if (tabBtn) {
+                    tabBtn.classList.remove('active-tab');
+                    tabBtn.classList.add('text-slate-400');
+                }
+            });
+
+            document.getElementById(`sec-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('active-tab');
+
+            if (tab === 'vetrina') caricaProdotti();
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function apriModalNuovoProdotto() {
+            document.getElementById('p-id').value = '';
+            document.getElementById('p-nome').value = '';
+            document.getElementById('p-descrizione').value = '';
+            document.getElementById('p-prezzo').value = '';
+            document.getElementById('p-giacenza').value = '';
+            document.getElementById('p-foto').value = '';
+            document.getElementById('modal-prodotto-title').innerText = "Aggiungi Prodotto al Magazzino";
+            openModal('modal-prodotto');
+        }
+
+        async function apriModalModificaProdotto(id) {
+            const p = await db.prodotti.get(id);
+            if(!p) return;
+            document.getElementById('p-id').value = p.id;
+            document.getElementById('p-nome').value = p.nome;
+            document.getElementById('p-descrizione').value = p.descrizione || '';
+            document.getElementById('p-prezzo').value = p.prezzo;
+            document.getElementById('p-giacenza').value = p.giacenza;
+            document.getElementById('p-foto').value = p.foto || '';
+            document.getElementById('modal-prodotto-title').innerText = "Modifica Prodotto & Descrizione";
+            openModal('modal-prodotto');
+        }
+
+        // Gestione Vetrina Prodotti
+        async function salvaProdotto(e) {
+            e.preventDefault();
+            const idVal = document.getElementById('p-id').value;
+            const prodottoData = {
+                nome: document.getElementById('p-nome').value,
+                descrizione: document.getElementById('p-descrizione').value,
+                prezzo: parseFloat(document.getElementById('p-prezzo').value),
+                giacenza: parseInt(document.getElementById('p-giacenza').value),
+                foto: document.getElementById('p-foto').value || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400'
+            };
+
+            if(idVal) {
+                await db.prodotti.update(parseInt(idVal), prodottoData);
+            } else {
+                await db.prodotti.add(prodottoData);
+            }
+
+            closeModal('modal-prodotto');
+            e.target.reset();
+            caricaProdotti();
+        }
+
+        async function caricaProdotti() {
+            const prodotti = await db.prodotti.toArray();
+            const grid = document.getElementById('grid-prodotti');
+
+            if(prodotti.length === 0) {
+                grid.innerHTML = `<p class="col-span-full text-center text-slate-400 py-10">Nessun prodotto presente a catalogo.</p>`;
+                return;
+            }
+
+            grid.innerHTML = prodotti.map(p => {
+                return `
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col justify-between hover:shadow-md transition">
+                        <div>
+                            <img src="${p.foto}" class="w-full h-44 object-cover bg-slate-100" alt="${p.nome}" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400'">
+                            <div class="p-4">
+                                <h3 class="font-bold text-slate-800 text-base mb-1">${p.nome}</h3>
+                                <p class="text-xs text-slate-500 mb-3 min-h-[32px] line-clamp-2">${p.descrizione ? p.descrizione : '<em>Nessuna descrizione specificata</em>'}</p>
+                                <div class="flex justify-between items-center text-sm mb-2">
+                                    <span class="text-sky-600 font-extrabold text-lg">${p.prezzo.toFixed(2)} €</span>
+                                    <span class="text-xs ${p.giacenza > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'} px-2 py-0.5 rounded-full font-semibold">Disponibili: ${p.giacenza}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                            <button onclick="apriModalModificaProdotto(${p.id})" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition">
+                                ✏️ Modifica
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Caricamento Iniziale
+        caricaProdotti();
+    </script>
+</body>
+</html>
